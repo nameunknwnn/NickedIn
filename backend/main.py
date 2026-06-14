@@ -17,8 +17,8 @@ linkedin_client_secret=settings.CLIENT_SECRET
 LINKEDIN_OAUTH_URL="https://www.linkedin.com/oauth/v2/authorization"
 LINKEDIN_ACCESS_TOKEN_URL="https://www.linkedin.com/oauth/v2/accessToken"
 REDIRECT_URI="http://localhost:8000/auth/callback"
-LINKEDIN_BASIC_INFO_URL="https://api.linkedin.com/v2/me"
-LINKEDIN_EMAIL_URL="https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))"
+LINKEDIN_BASIC_INFO_URL="https://api.linkedin.com/v2/userinfo"
+
 
 
 IS_PRODUCTION = not settings.FRONTEND_URL.startswith("http://localhost")
@@ -78,10 +78,12 @@ async def auth_callback(code:str,state:str|None=None,error:str|None = None):
     
     async with httpx.AsyncClient() as client:
         email_response=await client.get(
-            LINKEDIN_EMAIL_URL,
+            LINKEDIN_BASIC_INFO_URL,
             headers={"Authorization":f"Bearer {access_token}"}
         )
-    email="rishirawat2021@gmail.com"
+    userinfo = email_response.json()
+    email = userinfo.get("email")
+
 
     
     id=str(uuid.uuid4())
