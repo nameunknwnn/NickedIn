@@ -18,6 +18,7 @@ LINKEDIN_OAUTH_URL="https://www.linkedin.com/oauth/v2/authorization"
 LINKEDIN_ACCESS_TOKEN_URL="https://www.linkedin.com/oauth/v2/accessToken"
 REDIRECT_URI="http://localhost:8000/auth/callback"
 LINKEDIN_BASIC_INFO_URL="https://api.linkedin.com/v2/me"
+LINKEDIN_EMAIL_URL="https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))"
 
 
 IS_PRODUCTION = not settings.FRONTEND_URL.startswith("http://localhost")
@@ -31,11 +32,14 @@ COOKIE_SETTINGS = {
 
 
 def init_db():
-    conn=engine.connect()
-    with open("migrations/init.sql") as f:
-        conn.execute(text(f.read()))
-        conn.commit()
-
+    with engine.connect() as conn:
+        with open("migrations/init.sql") as f:
+            statements = f.read().split(";")
+            for stmt in statements:
+                stmt = stmt.strip()
+                if stmt:
+                    conn.execute(text(stmt))
+            conn.commit()
 init_db() 
 
 @app.get('/linked/auth')
@@ -53,7 +57,7 @@ async def linked_auth():
 
 
 @app.get('/auth/callback')
-async def auth_callback(code:str,state:str,error:str|None = None):
+async def auth_callback(code:str,state:str|None=None,error:str|None = None):
     if (error):
         return Response("failed",401)
     async with httpx.AsyncClient() as client:
@@ -69,22 +73,26 @@ async def auth_callback(code:str,state:str,error:str|None = None):
     result=response.json()
     access_token=result.get("access_token")
     refresh_token=result.get("refresh_token")
-    expire_time=result.get("expires_in")
+    print (refresh_token,"this is refresh token")
+    expire_time=result.get("refresh_token_expires_in")
+    
     async with httpx.AsyncClient() as client:
-        user_info_response=await client.get(
-            LINKEDIN_BASIC_INFO_URL,
-            headers={"authorization":f"Bearer {access_token}"}
+        email_response=await client.get(
+            LINKEDIN_EMAIL_URL,
+            headers={"Authorization":f"Bearer {access_token}"}
         )
-    user_info=user_info_response.json()
-    email=user_info.get("email")
-    id=uuid.uuid4()
-    connect=engine.connect()
-    connect.execute(text("INSERT INTO USER (id,email,linkedin_access_token,linkedin_refresh_token,linkedin_token_expires_at) VALUES(:id,:email,:access_token,:refresh_token,:expire_time"),
-    {"id":id,"email":email,":access_token":access_token,"refresh_token":refresh_token,"expire_time":expire_time}
-    )
-    connect.commit()
-    jwt_token=jwt.encode({"sub":email},settings.JWT_SECRET,algorithm="HS256")
-    response= RedirectResponse(url=f"{settings.FRONTEND_URL}/user")
-    response.set_cookie(value=jwt_token, **COOKIE_SETTINGS)
-    return response
+    email="rishirawat2021@gmail.com"
+
+    
+    id=str(uuid.uuid4())
+    with engine.connect() as connect:
+        connect.execute(text('INSERT INTO "USER" (id,email,linkedin_access_token,linkedin_refresh_token,linkedin_token_expires_at) VALUES(:id,:email,:access_token,:refresh_token,:expire_time)'),
+        {"id":id,"email":email,"access_token":access_token,"refresh_token":refresh_token,"expire_time":expire_time}
+        )
+        connect.commit()
+    
+    jwt_token=jwt.encode({"sub":email,"userid":id},settings.JWT_SECRET,algorithm="HS256")
+    res= RedirectResponse(url=f"{settings.FRONTEND_URL}/user")
+    res.set_cookie(value=jwt_token, **COOKIE_SETTINGS)
+    return res
 
